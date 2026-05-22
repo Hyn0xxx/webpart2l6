@@ -27,58 +27,261 @@ try {
     die('Ошибка подключения к базе данных: ' . $e->getMessage());
 }
 
-// HTTP АВТОРИЗАЦИЯ
-$auth_realm = 'Admin Panel';
+// Получаем данные авторизации из разных источников
+$username = null;
+$password = null;
 
-// Проверка, авторизован ли уже пользователь
+// Способ 1: Стандартная HTTP Auth
+if (isset($_SERVER['PHP_AUTH_USER'])) {
+    $username = $_SERVER['PHP_AUTH_USER'];
+    $password = $_SERVER['PHP_AUTH_PW'];
+}
+// Способ 2: Альтернативный способ (для некоторых хостингов)
+elseif (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+    $auth = $_SERVER['HTTP_AUTHORIZATION'];
+    if (preg_match('/Basic\s+(.*)$/i', $auth, $matches)) {
+        $credentials = base64_decode($matches[1]);
+        list($username, $password) = explode(':', $credentials, 2);
+    }
+}
+// Способ 3: POST форма (если HTTP Auth не работает)
+elseif (isset($_POST['login_submit'])) {
+    $username = $_POST['username'] ?? '';
+    $password = $_POST['password'] ?? '';
+}
+
+// Проверка авторизации
+$auth_error = '';
+$is_authenticated = false;
+
 if (!isset($_SESSION['admin_id'])) {
-    // Проверяем HTTP авторизацию
-    if (!isset($_SERVER['PHP_AUTH_USER'])) {
-        // Запрашиваем авторизацию
-        header('WWW-Authenticate: Basic realm="' . $auth_realm . '"');
-        header('HTTP/1.0 401 Unauthorized');
-        echo 'Требуется авторизация для доступа к панели администратора';
-        exit;
-    } else {
-        // Проверяем логин и пароль
-        $username = $_SERVER['PHP_AUTH_USER'];
-        $password = $_SERVER['PHP_AUTH_PW'];
-        
+    if ($username && $password) {
         $stmt = $pdo->prepare("SELECT * FROM admins WHERE username = ?");
         $stmt->execute([$username]);
         $admin = $stmt->fetch();
         
         if ($admin && password_verify($password, $admin['password_hash'])) {
-            // Авторизация успешна
             $_SESSION['admin_id'] = $admin['id'];
             $_SESSION['admin_username'] = $admin['username'];
+            $is_authenticated = true;
             
-            // Перенаправляем, чтобы убрать данные авторизации из URL
+            // Перенаправляем, чтобы убрать данные из URL
             header('Location: admin.php');
             exit;
         } else {
-            // Неверный логин или пароль
-            header('WWW-Authenticate: Basic realm="' . $auth_realm . '"');
-            header('HTTP/1.0 401 Unauthorized');
-            echo 'Неверный логин или пароль';
-            exit;
+            $auth_error = 'Неверный логин или пароль';
         }
+    }
+    
+    // Если не авторизован, показываем форму
+    if (!isset($_SESSION['admin_id'])) {
+        ?>
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+            <meta charset="UTF-8">
+            <title>Вход в админ-панель</title>
+            <style>
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    margin: 0;
+                    min-height: 100vh;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+                .login-container {
+                    background: white;
+                    border-radius: 20px;
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    width: 400px;
+                    padding: 40px;
+                    animation: slideIn 0.5s ease-out;
+                }
+                @keyframes slideIn {
+                    from {
+                        opacity: 0;
+                        transform: translateY(-30px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                h2 {
+                    color: #333;
+                    margin-bottom: 30px;
+                    text-align: center;
+                }
+                .form-group {
+                    margin-bottom: 20px;
+                }
+                label {
+                    display: block;
+                    margin-bottom: 8px;
+                    color: #555;
+                    font-weight: 500;
+                }
+                input {
+                    width: 100%;
+                    padding: 12px;
+                    border: 2px solid #e0e0e0;
+                    border-radius: 10px;
+                    font-size: 1em;
+                    transition: all 0.3s;
+                    box-sizing: border-box;
+                }
+                input:focus {
+                    outline: none;
+                    border-color: #667eea;
+                }
+                button {
+                    width: 100%;
+                    padding: 12px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    border: none;
+                    border-radius: 10px;
+                    font-size: 1em;
+                    cursor: pointer;
+                    transition: transform 0.3s;
+                }
+                button:hover {
+                    transform: translateY(-2px);
+                }
+                .error {
+                    background: #f8d7da;
+                    color: #721c24;
+                    padding: 10px;
+                    border-radius: 8px;
+                    margin-bottom: 20px;
+                    text-align: center;
+                }
+                .info {
+                    background: #d1ecf1;
+                    color: #0c5460;
+                    padding: 10px;
+                    border-radius: 8px;
+                    margin-bottom: 20px;
+                    font-size: 0.9em;
+                    text-align: center;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="login-container">
+                <h2>🔐 Вход в админ-панель</h2>
+                <?php if ($auth_error): ?>
+                    <div class="error">❌ <?= htmlspecialchars($auth_error) ?></div>
+                <?php endif; ?>
+                <div class="info">
+                    ℹ️ Используйте логин: <strong>admin</strong><br>
+                    Пароль: <strong>admin123</strong>
+                </div>
+                <form method="POST">
+                    <div class="form-group">
+                        <label>Логин</label>
+                        <input type="text" name="username" required autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label>Пароль</label>
+                        <input type="password" name="password" required>
+                    </div>
+                    <button type="submit" name="login_submit">Войти</button>
+                </form>
+            </div>
+        </body>
+        </html>
+        <?php
+        exit;
     }
 }
 
-// Выход из админ-панели
+// Если мы здесь, значит пользователь авторизован
+// Дальше идет основной код админ-панели
+?>
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Панель администратора</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .admin-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+        }
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .welcome {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="admin-header">
+            <h1> Панель администратора</h1>
+            <a href="?logout=1" class="logout-btn">🚪 Выйти</a>
+        </div>
+        
+        <div class="welcome">
+            <h2>Добро пожаловать, <?= htmlspecialchars($_SESSION['admin_username']) ?>!</h2>
+            <p>Вы успешно авторизовались в панели администратора.</p>
+            <p>Здесь будет отображаться список пользователей, статистика и другие функции.</p>
+        </div>
+        
+        <!-- Здесь будет остальной функционал -->
+    </div>
+</body>
+</html>
+
+<?php
+// Выход
 if (isset($_GET['logout'])) {
     session_destroy();
     header('Location: admin.php');
     exit();
 }
-
-// Дальше идет остальной код админ-панели
-// ... (весь остальной код из предыдущего admin.php)
-
-// Для теста выведем сообщение об успешной авторизации
-echo "<h1>Добро пожаловать в админ-панель, " . htmlspecialchars($_SESSION['admin_username']) . "!</h1>";
-echo "<p><a href='?logout=1'>Выйти</a></p>";
-
-// Здесь будет остальной функционал админ-панели
 ?>
