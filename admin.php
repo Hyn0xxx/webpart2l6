@@ -1072,4 +1072,42 @@ $total_users = count($users);
                 
                 <div class="form-group">
                     <label>Биография</label>
-                    <textarea
+                    <textarea name="bio" rows="4"><?= htmlspecialchars($edit_user_data['bio']) ?></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="contract" value="1" <?= $edit_user_data['contract_accepted'] ? 'checked' : '' ?> required>
+                        Согласие на обработку данных *
+                    </label>
+                </div>
+                
+                <button type="submit" name="update_user" class="btn-submit">💾 Сохранить изменения</button>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        function closeModal() {
+            window.location.href = 'admin.php';
+        }
+        
+        document.getElementById('editModal')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+    </script>
+    <?php endif; ?>
+
+    <script>
+        function confirmDelete(event, userId, userName) {
+            event.preventDefault();
+            if (confirm(`Вы уверены, что хотите удалить пользователя "${userName}"? Это действие нельзя отменить.`)) {
+                window.location.href = `?delete=${userId}&confirm=yes`;
+            }
+            return false;
+        }
+    </script>
+</body>
+</html>
